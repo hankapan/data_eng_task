@@ -40,20 +40,15 @@ WHERE p.product_name IS NOT NULL;
 
 
 --L3 invoice
---invoices a contracts are duplicated in this tab, for the reporting use the focus is on product_id
---consider unique PK creation
 CREATE OR REPLACE VIEW `dulcet-bliss-455012-r5.L3_marketing.L3_invoice` AS
 SELECT  
-  i.invoice_id,
-  i.contract_id, 
-  pp2.product_id, -- optional
-  i.invoice_amount_usd_clean AS amount_w_vat_usd,
-  SAFE_MULTIPLY(i.invoice_storno_usd_clean,1.2) AS return_w_vat_usd,
-  SAFE_SUBTRACT(i.invoice_amount_usd_clean, SAFE_MULTIPLY(i.invoice_storno_usd_clean, 1.2)) AS total_paid_usd, --heads up! total paid means on invoice, not total paid on product
-  i.invoice_date_paid AS paid_date
-FROM `dulcet-bliss-455012-r5.L2.L2_invoice` AS i
-  LEFT JOIN `dulcet-bliss-455012-r5.L2.L2_product_purchase` AS pp2
-    ON i.contract_id = pp2.contract_id;
+  invoice_id,
+  contract_id, 
+  invoice_amount_usd_clean AS amount_w_vat_usd,
+  SAFE_MULTIPLY(invoice_storno_usd_clean,1.2) AS return_w_vat_usd,
+  SAFE_SUBTRACT(invoice_amount_usd_clean, SAFE_MULTIPLY(invoice_storno_usd_clean, 1.2)) AS total_paid_usd, 
+  invoice_date_paid AS paid_date
+FROM `dulcet-bliss-455012-r5.L2.L2_invoice`;
 
 
 --L3 branch
