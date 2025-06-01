@@ -1,0 +1,64 @@
+--L3 contract
+CREATE OR REPLACE VIEW `dulcet-bliss-455012-r5.L3_marketing.L3_contract` AS
+SELECT 
+  contract_id, 
+  branch_id, 
+  contract_valid_from, 
+  contract_valid_to,  
+  contract_registration_end_reason AS registration_end_reason, 
+  CASE
+    WHEN DATE_DIFF(contract_valid_to, contract_valid_from,MONTH) < 6 THEN 'less than half year' 
+    WHEN DATE_DIFF(contract_valid_to, contract_valid_from,MONTH) >=6 
+      AND DATE_DIFF(contract_valid_to, contract_valid_from,MONTH) <12 THEN '1 year'
+    WHEN DATE_DIFF(contract_valid_to, contract_valid_from,MONTH) >=12 
+      AND DATE_DIFF(contract_valid_to, contract_valid_from,MONTH) <24 THEN '2 years'
+    ELSE 'more than 2 years'
+  END AS contract_duration,   
+  EXTRACT(YEAR FROM contract_activation_process_date) AS start_year_of_contract, --to check with data owner what specificaly mean "start of contract"
+  flag_prolongation, 
+  contract_status 
+FROM `dulcet-bliss-455012-r5.L2.L2_contract`
+WHERE contract_registered_at IS NOT NULL
+  AND contract_valid_to > contract_valid_from;
+
+--L3 product --let's think of it as product_purchase, name 'purchase' used to streamline tab names
+CREATE OR REPLACE VIEW `dulcet-bliss-455012-r5.L3_marketing.L3_product` AS
+SELECT  
+  pp.package_id AS product_purchase_id,
+  p.product_id,
+  pp.contract_id,
+  p.product_name,
+  p.product_type,
+  pp.product_valid_from,
+  pp.product_valid_to,
+  pp.measure_unit,
+  pp.flag_unlimited_product
+FROM `dulcet-bliss-455012-r5.L2.L2_product_purchase` AS pp
+  LEFT JOIN `dulcet-bliss-455012-r5.L2.L2_product` as p
+  ON pp.product_id = p.product_id
+WHERE p.product_name IS NOT NULL;
+
+
+--L3 invoice
+--invoices a contracts are duplicated in this tab, for the reporting use the focus is on product_id
+--consider unique PK creation
+CREATE OR REPLACE VIEW `dulcet-bliss-455012-r5.L3_marketing.L3_invoice` AS
+SELECT  
+  i.invoice_id,
+  i.contract_id, 
+  pp2.product_id, -- optional
+  i.invoice_amount_usd_clean AS amount_w_vat_usd,
+  SAFE_MULTIPLY(i.invoice_storno_usd_clean,1.2) AS return_w_vat_usd,
+  SAFE_SUBTRACT(i.invoice_amount_usd_clean, SAFE_MULTIPLY(i.invoice_storno_usd_clean, 1.2)) AS total_paid_usd, --heads up! total paid means on invoice, not total paid on product
+  i.invoice_date_paid AS paid_date
+FROM `dulcet-bliss-455012-r5.L2.L2_invoice` AS i
+  LEFT JOIN `dulcet-bliss-455012-r5.L2.L2_product_purchase` AS pp2
+    ON i.contract_id = pp2.contract_id;
+
+
+--L3 branch
+CREATE OR REPLACE VIEW `dulcet-bliss-455012-r5.L3_marketing.L3_branch` AS
+SELECT
+  branch_id,
+  branch_name
+FROM `dulcet-bliss-455012-r5.L2.L2_branch`; 
