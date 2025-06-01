@@ -1,0 +1,100 @@
+--L2 contract
+CREATE OR REPLACE VIEW `dulcet-bliss-455012-r5.L2.L2_contract` AS
+SELECT 
+  contract_id, --PK
+  branch_id, 
+  contract_valid_from, 
+  contract_valid_to, 
+  contract_registered_at, 
+  contract_registration_end_reason, 
+  contract_prolongation_date, 
+  flag_prolongation, 
+  contract_status, 
+  contract_activation_process_date, 
+  contract_signed_at, 
+  flag_send_invoice_email AS flag_sent_email 
+FROM `dulcet-bliss-455012-r5.L1.L1_contract_2`
+WHERE contract_registered_at IS NOT NULL; 
+
+--L2 branch
+CREATE OR REPLACE VIEW `dulcet-bliss-455012-r5.L2.L2_branch` AS
+SELECT
+  branch_id, --PK
+  branch_name
+FROM `dulcet-bliss-455012-r5.L1.L1_branch_2`
+WHERE LOWER(branch_name) NOT LIKE 'unknown';
+
+--L2 invoice
+CREATE OR REPLACE VIEW `dulcet-bliss-455012-r5.L2.L2_invoice` AS
+SELECT 
+  invoice_id, --PK
+  invoice_id_old,
+  contract_id,
+  invoice_type_text,
+  CASE 
+    WHEN invoice_amount_usd <=0 THEN 0
+    ELSE invoice_amount_usd
+    END AS invoice_amount_usd_clean, --without VAT
+  CASE 
+    WHEN invoice_storno_usd <=0 THEN 0
+    ELSE invoice_storno_usd
+    END AS invoice_storno_usd_clean, --without VAT
+  SAFE_DIVIDE(invoice_amount_usd,1.2) AS amount_wo_vat_usd,
+  invoice_date,
+  invoice_due_date,
+  invoice_date_paid,
+  invoice_start_date,
+  invoice_end_date,
+  flag_invoice_issued,
+  invoice_status_id, --don't we want text description too?
+  ROW_NUMBER()
+  OVER (PARTITION BY contract_id ORDER BY invoice_date) as invoice_order --contract can have more invoices, we're pairing order no to a contract
+/*alternatively: CONCAT(CAST(contract_id AS STRING), '_', 
+       CAST(ROW_NUMBER() OVER (PARTITION BY contract_id ORDER BY invoice_date) AS STRING)) 
+AS invoice_order*/  
+FROM `dulcet-bliss-455012-r5.L1.L1_invoice_2`
+WHERE LOWER(invoice_type_text) = 'invoice'
+  AND flag_invoice_issued = TRUE;
+
+--L2 product
+--header included by mistake as row, fix in higher layer
+CREATE OR REPLACE VIEW `dulcet-bliss-455012-r5.L2.L2_product` AS
+SELECT 
+  product_id, --PK
+  product_name,
+  product_type,
+  product_category
+FROM `dulcet-bliss-455012-r5.L1.L1_product_2`
+WHERE product_category IN ('product', 'rent');
+
+--L2 product_purchase
+CREATE OR REPLACE VIEW `dulcet-bliss-455012-r5.L2.L2_product_purchase` AS
+SELECT 
+  pp.package_id, --PK
+  pp.contract_id,
+  pp.product_id,
+  p.product_category, 
+  pp.product_status_name,
+  SAFE_MULTIPLY( 
+    CASE 
+      WHEN pp.price_wo_vat_usd <=0 THEN 0
+      ELSE pp.price_wo_vat_usd
+      END, 1.2) AS price_w_vat_usd_clean,  
+  CASE
+  WHEN pp.price_wo_vat_usd <=0 THEN 0
+  ELSE pp.price_wo_vat_usd
+  END AS price_wo_vat_usd_clean, 
+  IF(pp.purchase_end_date >= '2035-12-31', TRUE, FALSE) AS flag_unlimited_product, --ověřit s data ownerem, mám jinak oproti zadání
+  pp.purchase_start_date AS product_valid_from, 
+  pp.purchase_end_date AS product_valid_to, 
+  pp.measure_unit,
+  p.product_name, 
+  p.product_type,
+  pp.purchase_inserted_at AS create_date,
+  pp.purchase_updated_at AS update_date
+  FROM `dulcet-bliss-455012-r5.L1.L1_product_purchase_2` pp
+  LEFT JOIN `dulcet-bliss-455012-r5.L2.L2_product` p
+  ON pp.product_id = p.product_id
+  WHERE p.product_category IN ('product', 'rent')
+    AND pp.product_status_name IS NOT NULL
+    AND LOWER(pp.product_status_name) NOT IN ('canceled', 'disconnected'); --to check with data owner, whether not to use wildcard in other instances
